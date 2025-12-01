@@ -1,0 +1,14 @@
+Quartus-Pipelined/db/*
+Quartus-Pipelined/incremental_db/*
+*.cdf
+*.done
+*.smsg
+*.pin
+*.qsf
+*.qws
+*.sft
+*.summary
+*.rpt
+*.sdo
+*.xrf
+*.svo
