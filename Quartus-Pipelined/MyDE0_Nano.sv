@@ -127,7 +127,7 @@ input logic 		     [1:0]		GPIO_1_IN
     end else if (MemWriteM & cs_led) begin
         led_reg <= WriteDataM[7:0];  // Normal LED write
     end else begin
-        // Auto-display debug info when not explicitly writin
+        // Always write sqr_result to check 
         led_reg <= sqrt_result[7:0];
     end
 	end

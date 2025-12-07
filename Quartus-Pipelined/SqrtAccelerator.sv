@@ -1,3 +1,72 @@
+//=======================================================
+//  Square Root Accelerator (Wrapper + Core)
+//=======================================================
+
+module SqrtAccelerator (
+    input  logic        clk,
+    input  logic        reset,
+    input  logic        cs,         // Chip Select
+    input  logic        we,         // Write Enable
+    input  logic [31:0] addr,       // Address 
+    input  logic [31:0] wdata,      // Data In
+    output logic [31:0] rdata       // Data Out
+);
+
+    logic [31:0] input_reg;
+    logic [31:0] output_reg;
+    logic        start;
+    logic        busy, done;
+    logic [31:0] result;
+
+    // Instantiate Core
+    SqrtCore core (
+        .clk(clk),
+        .rst(reset),
+        .start(start),
+        .radicand(input_reg),
+        .root(result),
+        .busy(busy),
+        .done(done)
+    );
+
+    // Bus Interface Logic
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) begin
+            input_reg  <= 0;
+            output_reg <= 0;
+            start      <= 0;
+        end else begin
+            start <= 0; // Default to 0 (pulse)
+
+            // WRITE logic: Writing to Offset 0 starts calculation
+            if (cs && we && addr[3:0] == 4'h0) begin
+                input_reg <= wdata;
+                start     <= 1; 
+            end
+
+            // Capture result when core finishes
+            if (done) begin
+                output_reg <= result;
+            end
+        end
+    end
+
+    // READ logic
+    // Offset 0x0: Result Register
+    // Offset 0x4: Status Register (Bit 0 = Busy)
+    always_comb begin
+        rdata = 32'b0;
+        if (cs && !we) begin
+            if (addr[3:0] == 4'h4)      // Address ...4 (Status)
+                rdata = {31'b0, busy};
+            else if (addr[3:0] == 4'h0) // Address ...0 (Result)
+                rdata = output_reg;
+        end
+    end
+
+endmodule
+
+
 module SqrtCore (
     input  logic        clk,
     input  logic        rst,
