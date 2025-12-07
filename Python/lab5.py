@@ -21,7 +21,7 @@ GPIO.output(MyARM_ResetPin, GPIO.LOW)
 sleep(0.1)
 
 # Send the first SPI packet: Writing integer A at address 0x400
-ToSPI = [0x80, 0x00, 0x00, 0x00, 0x7D]  # YOU NEED TO MODIFY THIS LINE
+ToSPI = [0x80, 0x00, 0x00, 0x00, 0xE1]  # YOU NEED TO MODIFY THIS LINE
 FromSPI = MySPI_FPGA.xfer2(ToSPI)
 sleep(0.1)
 
