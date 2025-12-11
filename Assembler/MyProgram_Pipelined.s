@@ -9,7 +9,6 @@
 .global main
 
 B main          @ begin at main
-.balign 128
 
 /************* MAIN SECTION *************/
 
@@ -17,21 +16,22 @@ main:
     SUB R0, R15, R15        @ R0 = 0
     STR R0, [R0, #0x500]    @ Clear LED
     
-    @ Test with a known value first (e.g., 16, sqrt = 4)
-    LDR R1, [R0, #0x400]    @ Test value
-    STR R1, [R0, #0x500]    @ Show input on LED
+    MOV R1, #16
+    STR R1, [R0, #0x500]    @ Show input (16) on LED
     
-    STR R1, [R0, #0x600]    @ Write to SQRT input (triggers start)
+    STR R1, [R0, #0x600]    @ Start Accelerator
     
 wait_sqrt:
-    LDR R3, [R0, #0x608]    @ Read status
-    AND R3, R3, #1          @ Mask busy bit
+    ADD R6, R6, #1
+    LDR R3, [R0, #0x608]
+    AND R3, R3, #1
     CMP R3, #1
-    BEQ wait_sqrt           @ Loop while busy
+    BEQ wait_sqrt
+
+    SUB R0, R15, R15        @ R0 = 0 
     
-    LDR R2, [R0, #0x604]    @ Read result
-    STR R2, [R0, #0x500]    @ Display on LED (should be 4)
-    
+    LDR R2, [R0, #0x604]    @ Read Result (4)
+    STR R2, [R0, #0x500]    @ Write Result to LED
+    STR R2, [R0, #0x404]    @ Write Result to SPI
 done:
     B done
-.end

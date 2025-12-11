@@ -1,15 +1,11 @@
-//=======================================================
-//  Square Root Accelerator (Wrapper + Core)
-//=======================================================
-
 module SqrtAccelerator (
     input  logic        clk,
     input  logic        reset,
-    input  logic        cs,         // Chip Select
-    input  logic        we,         // Write Enable
-    input  logic [31:0] addr,       // Address 
-    input  logic [31:0] wdata,      // Data In
-    output logic [31:0] rdata       // Data Out
+    input  logic        cs,
+    input  logic        we,
+    input  logic [31:0] addr,
+    input  logic [31:0] wdata,
+    output logic [31:0] rdata
 );
 
     logic [31:0] input_reg;
@@ -18,7 +14,6 @@ module SqrtAccelerator (
     logic        busy, done;
     logic [31:0] result;
 
-    // Instantiate Core
     SqrtCore core (
         .clk(clk),
         .rst(reset),
@@ -29,43 +24,45 @@ module SqrtAccelerator (
         .done(done)
     );
 
-    // Bus Interface Logic
+    // WRITE LOGIC (Positive Edge is safer for SignalTap/Constraints)
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
-            input_reg  <= 0;
-            output_reg <= 0;
-            start      <= 0;
+            input_reg <= 0;
+            start     <= 0;
         end else begin
-            start <= 0; // Default to 0 (pulse)
-
-            // WRITE logic: Writing to Offset 0 starts calculation
-            if (cs && we && addr[3:0] == 4'h0) begin
+            start <= 0; 
+            // Write to Offset 0x0 triggers start
+            if (cs && we && addr[3:2] == 2'b00) begin
                 input_reg <= wdata;
                 start     <= 1; 
-            end
-
-            // Capture result when core finishes
-            if (done) begin
-                output_reg <= result;
             end
         end
     end
 
-    // READ logic
-    // Offset 0x0: Result Register
-    // Offset 0x4: Status Register (Bit 0 = Busy)
+    // RESULT CAPTURE
+    always_ff @(posedge clk or posedge reset) begin
+        if (reset) output_reg <= 0;
+        else if (done) output_reg <= result;
+    end
+
+    // ============================================================
+    // FIX: ROBUST COMBINATIONAL READ
+    // ============================================================
+    // We use addr[3:2] to ignore byte alignment issues.
+    // 0x0 = 0000 (00), 0x4 = 0100 (01), 0x8 = 1000 (10)
     always_comb begin
         rdata = 32'b0;
         if (cs && !we) begin
-            if (addr[3:0] == 4'h4)      // Address ...4 (Status)
-                rdata = {31'b0, busy};
-            else if (addr[3:0] == 4'h0) // Address ...0 (Result)
-                rdata = output_reg;
+            case (addr[3:2])
+                2'b10:   rdata = {31'b0, busy | done}; // Offset 0x8 or 0xC -> Status
+                2'b01:   rdata = output_reg;    // Offset 0x4 -> Result
+                2'b00:   rdata = input_reg;     // Offset 0x0 -> Input
+                default: rdata = output_reg;    // Fallback: Show result
+            endcase
         end
     end
 
 endmodule
-
 
 module SqrtCore (
     input  logic        clk,
@@ -124,7 +121,7 @@ module SqrtCore (
             DONE_STATE: begin
                 next_state = IDLE;
             end
-            default: next_state = IDLE;
+            default: next_state = next_state;
         endcase
     end
     

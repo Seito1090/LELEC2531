@@ -72,13 +72,7 @@ input logic 		     [1:0]		GPIO_1_IN
 	logic  			cs_dmem, cs_led, cs_spi, cs_sqrt;
 	logic [7:0] 	led_reg;
 	logic [31:0]	spi_data;
-	
-	// SQRT signals
-	logic [31:0]	sqrt_result;
-	logic          sqrt_busy;
-	logic          sqrt_done;
-	logic          sqrt_start;
-	logic [31:0]   sqrt_input;
+	logic [31:0]    sqrt_data; // Data coming from accelerator
 	
 	assign clk   = CLOCK_50;
 	assign reset = GPIO_0_PI[1];
@@ -89,50 +83,28 @@ input logic 		     [1:0]		GPIO_1_IN
 	dmem dmem(clk, cs_dmem, MemWriteM, DataAdrM, WriteDataM, ReadData_dmem);
 	
 	// Chip Select logic
+	assign cs_dmem   = ~DataAdrM[11] & ~DataAdrM[10];                              
+	assign cs_spi    = ~DataAdrM[11] &  DataAdrM[10] & ~DataAdrM[9] & ~DataAdrM[8]; 
+	assign cs_led    = ~DataAdrM[11] &  DataAdrM[10] & ~DataAdrM[9] &  DataAdrM[8];
+    // SQRT Select: 0x600 - 0x6FF
+	assign cs_sqrt   = ~DataAdrM[11] &  DataAdrM[10] &  DataAdrM[9] & ~DataAdrM[8]; 
 
-	// Address MAP : 0x0000 - 0x03FF : RAM (255 words of 32 bits)
-	//               0x0400 - 0x04FF : SPI - expanded to full 0x4-- range
-	//               0x0500          : LED Reg
-	//               0x0600 - 0x06FF : SQRT Accelerator (MOVED HERE)
-	//                  0x0600       : Input Register (Write only)
-	//                  0x0604       : Result Register (Read only)
-	//                  0x0608       : Status Register (Read: bit 0 = busy)
-
-	assign cs_dmem   = ~DataAdrM[11] & ~DataAdrM[10];                              // 0x000-0x3FF
-	assign cs_spi    = ~DataAdrM[11] &  DataAdrM[10] & ~DataAdrM[9] & ~DataAdrM[8]; // 0x400-0x4FF (FULL RANGE)
-	assign cs_sqrt   = ~DataAdrM[11] &  DataAdrM[10] &  DataAdrM[9] & ~DataAdrM[8]; // 0x600-0x6FF (MOVED)
-	assign cs_led    = ~DataAdrM[11] &  DataAdrM[10] & ~DataAdrM[9] &  DataAdrM[8]; // 0x500-0x5FF
-
-	// Read Data
+	// Read Data Mux
 	always_comb
 		if (cs_dmem) ReadDataM = ReadData_dmem;
 		else if (cs_spi) ReadDataM = spi_data;
-		else if (cs_sqrt) begin
-        // Address decode for SQRT registers
-        case (DataAdrM[3:2])
-            2'b00:  ReadDataM = sqrt_input;         // 0x600: Read back input
-            2'b01:  ReadDataM = sqrt_result;        // 0x604: Read result
-            2'b10:  ReadDataM = {31'b0, sqrt_busy}; // 0x608: Read status
-            default: ReadDataM = 32'b0;
-        endcase
-		end
+		else if (cs_sqrt) ReadDataM = sqrt_data; // Connect Wrapper Output
 		else if (cs_led) ReadDataM = {24'h000000, led_reg};
 		else ReadDataM = 32'b0;
 	
 	// LED logic	
 	assign LED = led_reg;	
 	always_ff @(posedge clk or posedge reset) begin
-    if (reset) begin
-        led_reg <= 8'd0;
-    end else if (MemWriteM & cs_led) begin
-        led_reg <= WriteDataM[7:0];  // Normal LED write
-    end else begin
-        // Always write sqr_result to check 
-        led_reg <= sqrt_result[7:0];
-    end
+        if (reset) led_reg <= 8'd0;
+        else if (MemWriteM & cs_led) led_reg <= WriteDataM[7:0];
 	end
 
-	// Testbench
+    // Testbench assignments...
 	assign GPIO_1[33]    = MemWriteM;
 	assign GPIO_1[15:0]  = WriteDataM[15:0];
 	assign GPIO_1[31:16] = ReadDataM[15:0];
@@ -141,9 +113,8 @@ input logic 		     [1:0]		GPIO_1_IN
 //=======================================================
 //  SPI
 //=======================================================
-
+    // ... (Keep SPI Slave Instance exactly as it was) ...
 	logic 			spi_clk, spi_cs, spi_mosi, spi_miso;
-
 	spi_slave spi_slave_instance(
 		.SPI_CLK    (spi_clk),
 		.SPI_CS     (spi_cs),
@@ -156,46 +127,26 @@ input logic 		     [1:0]		GPIO_1_IN
 		.Clk        (clk)
 	);
 	
-	assign spi_clk  		= GPIO_0_PI[11];	// SCLK = pin 16 = GPIO_11
-	assign spi_cs   		= GPIO_0_PI[9];	// CE0  = pin 14 = GPIO_9
-	assign spi_mosi     	= GPIO_0_PI[15];	// MOSI = pin 20 = GPIO_15
-	
-	assign GPIO_0_PI[13] = spi_cs ? 1'bz : spi_miso;  // MISO = pin 18 = GPIO_13
+	assign spi_clk  		= GPIO_0_PI[11];	
+	assign spi_cs   		= GPIO_0_PI[9];	
+	assign spi_mosi     	= GPIO_0_PI[15];	
+	assign GPIO_0_PI[13] = spi_cs ? 1'bz : spi_miso; 
 	
 //=======================================================
-// SQRT Accelerator Logic
+// SQRT Accelerator (Instantiate the Wrapper)
 //=======================================================
 	
-	// Start signal: pulse when writing to 0x480
-	always_ff @(posedge clk or posedge reset) begin
-		if (reset) begin
-			sqrt_start <= 0;
-			sqrt_input <= 0;
-		end else begin
-			sqrt_start <= 0;  // Default: no start
-			
-			// Writing to 0x480 triggers computation
-			if (cs_sqrt && MemWriteM && (DataAdrM[3:2] == 2'b00)) begin
-            sqrt_input <= WriteDataM;
-            sqrt_start <= 1;
-			end
-		end
-	end
-	
-	// Instantiate SQRT Core
-	SqrtCore sqrt_core (
-		.clk      (clk),
-		.rst      (reset),
-		.start    (sqrt_start),
-		.radicand (sqrt_input),
-		.root     (sqrt_result),
-		.busy     (sqrt_busy),
-		.done     (sqrt_done)
+	SqrtAccelerator sqrt_wrap (
+		.clk		 	 (clk),
+		.reset	    (reset),
+		.cs 			 (cs_sqrt),
+		.we 			 (MemWriteM & cs_sqrt),
+		.addr			 (DataAdrM),
+		.wdata	    (WriteDataM),
+		.rdata	    (sqrt_data)
 	);
-	
 
 endmodule
-
 //=======================================================
 //  Memory
 //=======================================================	
@@ -224,4 +175,3 @@ endmodule
 
 
 	
-
