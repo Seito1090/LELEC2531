@@ -85,15 +85,14 @@ input logic 		     [1:0]		GPIO_1_IN
 	// Chip Select logic
 	assign cs_dmem   = ~DataAdrM[11] & ~DataAdrM[10];                              
 	assign cs_spi    = ~DataAdrM[11] &  DataAdrM[10] & ~DataAdrM[9] & ~DataAdrM[8]; 
-	assign cs_led    = ~DataAdrM[11] &  DataAdrM[10] & ~DataAdrM[9] &  DataAdrM[8];
-    // SQRT Select: 0x600 - 0x6FF
+	assign cs_led    = ~DataAdrM[11] &  DataAdrM[10] & ~DataAdrM[9] &  DataAdrM[8]; // SQRT Select: 0x600 - 0x6FF
 	assign cs_sqrt   = ~DataAdrM[11] &  DataAdrM[10] &  DataAdrM[9] & ~DataAdrM[8]; 
 
 	// Read Data Mux
 	always_comb
 		if (cs_dmem) ReadDataM = ReadData_dmem;
 		else if (cs_spi) ReadDataM = spi_data;
-		else if (cs_sqrt) ReadDataM = sqrt_data; // Connect Wrapper Output
+		else if (cs_sqrt) ReadDataM = sqrt_data; // Our Wrapper :)
 		else if (cs_led) ReadDataM = {24'h000000, led_reg};
 		else ReadDataM = 32'b0;
 	
@@ -113,7 +112,6 @@ input logic 		     [1:0]		GPIO_1_IN
 //=======================================================
 //  SPI
 //=======================================================
-    // ... (Keep SPI Slave Instance exactly as it was) ...
 	logic 			spi_clk, spi_cs, spi_mosi, spi_miso;
 	spi_slave spi_slave_instance(
 		.SPI_CLK    (spi_clk),
@@ -136,14 +134,14 @@ input logic 		     [1:0]		GPIO_1_IN
 // SQRT Accelerator (Instantiate the Wrapper)
 //=======================================================
 	
-	SqrtAccelerator sqrt_wrap (
-		.clk		 	 (clk),
-		.reset	    (reset),
-		.cs 			 (cs_sqrt),
-		.we 			 (MemWriteM & cs_sqrt),
-		.addr			 (DataAdrM),
-		.wdata	    (WriteDataM),
-		.rdata	    (sqrt_data)
+	SqrtAccelerator sqrt_wrap(
+		.clk 			(clk),
+		.reset		(reset),
+		.cs			(cs_sqrt),
+		.we			(MemWriteM & cs_sqrt),
+		.addr			(DataAdrM),
+		.wdata		(WriteDataM),
+		.rdata		(sqrt_data)
 	);
 
 endmodule

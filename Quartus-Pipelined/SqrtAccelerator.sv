@@ -24,14 +24,14 @@ module SqrtAccelerator (
         .done(done)
     );
 
-    // WRITE LOGIC (Positive Edge is safer for SignalTap/Constraints)
+    // Write logic
     always_ff @(posedge clk or posedge reset) begin
         if (reset) begin
             input_reg <= 0;
             start     <= 0;
         end else begin
             start <= 0; 
-            // Write to Offset 0x0 triggers start
+            // Write to Offset 0x0 (address 0x600 in this case) triggers start 
             if (cs && we && addr[3:2] == 2'b00) begin
                 input_reg <= wdata;
                 start     <= 1; 
@@ -39,22 +39,19 @@ module SqrtAccelerator (
         end
     end
 
-    // RESULT CAPTURE
+    // Saving / resetting our output register
     always_ff @(posedge clk or posedge reset) begin
         if (reset) output_reg <= 0;
         else if (done) output_reg <= result;
     end
 
-    // ============================================================
-    // FIX: ROBUST COMBINATIONAL READ
-    // ============================================================
-    // We use addr[3:2] to ignore byte alignment issues.
-    // 0x0 = 0000 (00), 0x4 = 0100 (01), 0x8 = 1000 (10)
+    // Read logic, we use addr[3:2] to ignore byte alignment issues.
+    // So in the end we have 0x60- with - being : 0x0 = 0000 (00), 0x4 = 0100 (01), 0x8 = 1000 (10)
     always_comb begin
         rdata = 32'b0;
         if (cs && !we) begin
             case (addr[3:2])
-                2'b10:   rdata = {31'b0, busy | done}; // Offset 0x8 or 0xC -> Status
+                2'b10:   rdata = {31'b0, busy}; // Offset 0x8 or 0xC -> Status
                 2'b01:   rdata = output_reg;    // Offset 0x4 -> Result
                 2'b00:   rdata = input_reg;     // Offset 0x0 -> Input
                 default: rdata = output_reg;    // Fallback: Show result
